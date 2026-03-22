@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+TESTS_REPO="https://github.com/ThatDraenGuy/stella_test_suite.git"
+TESTS_DIR="tests/stella_test_suite"
+STAGE="stage1"
+
+SKIP_EXTENSIONS="structural-patterns|letrec-bindings"
+should_skip_file() {
+    grep -q '#letrec-bindings' "$1" && return 0
+    grep -q '#structural-patterns' "$1" && grep -q '#let-patterns' "$1" && return 0
+    return 1
+}
+
+if [[ -t 1 ]]; then
+    RED=$'\033[0;31m'
+    GREEN=$'\033[0;32m'
+    YELLOW=$'\033[1;33m'
+    NC=$'\033[0m'
+    BOLD=$'\033[1m'
+else
+    RED='' GREEN='' YELLOW='' NC='' BOLD=''
+fi
+
+passed=0
+failed=0
+skipped=0
+failures=()
+
+if [[ "${1:-}" == "--docker" ]]; then
+    TYPECHECKER="docker run -i stella-typechecker"
+elif [[ -n "${1:-}" ]]; then
+    TYPECHECKER="$1"
+elif [[ -x "build/stella_typechecker" ]]; then
+    TYPECHECKER="./build/stella_typechecker"
+else
+    echo "Usage: $0 [path/to/stella_typechecker | --docker]"
+    echo "  Or build the project first so ./build/stella_typechecker exists."
+    exit 1
+fi
+
+if [[ ! -d "$TESTS_DIR" ]]; then
+    echo "Cloning test suite..."
+    git clone --depth 1 "$TESTS_REPO" "$TESTS_DIR"
+fi
+
+run_well_typed() {
+    local dir="$1"
+    local label="$2"
+    [[ -d "$dir" ]] || return 0
+
+    for f in "$dir"/*.stella "$dir"/*.stela; do
+        [[ -f "$f" ]] || continue
+        local name="${label}/$(basename "$f")"
+        if should_skip_file "$f"; then
+            printf "${YELLOW}  SKIP${NC}  %s\n" "$name"
+            ((skipped++))
+            continue
+        fi
+        local stderr_out
+        stderr_out=$(mktemp)
+
+        if $TYPECHECKER < "$f" > /dev/null 2> "$stderr_out"; then
+            printf "${GREEN}  PASS${NC}  %s\n" "$name"
+            ((passed++))
+        else
+            printf "${RED}  FAIL${NC}  %s  (expected exit 0, got non-zero)\n" "$name"
+            if [[ -s "$stderr_out" ]]; then
+                printf "        stderr: %s\n" "$(head -1 "$stderr_out")"
+            fi
+            ((failed++))
+            failures+=("$name: expected well-typed (exit 0)")
+        fi
+        rm -f "$stderr_out"
+    done
+}
+
+run_ill_typed() {
+    local dir="$1"
+    local label="$2"
+    [[ -d "$dir" ]] || return 0
+
+    for error_dir in "$dir"/*/; do
+        [[ -d "$error_dir" ]] || continue
+        local error_name
+        error_name=$(basename "$error_dir")
+        local expected_code="ERROR_${error_name^^}"
+
+        for f in "$error_dir"/*.stella "$error_dir"/*.stela; do
+            [[ -f "$f" ]] || continue
+            local name="${label}/${error_name}/$(basename "$f")"
+            if should_skip_file "$f"; then
+                printf "${YELLOW}  SKIP${NC}  %s\n" "$name"
+                ((skipped++))
+                continue
+            fi
+            local stderr_out
+            stderr_out=$(mktemp)
+
+            if $TYPECHECKER < "$f" > /dev/null 2> "$stderr_out"; then
+                printf "${RED}  FAIL${NC}  %s  (expected non-zero exit, got 0)\n" "$name"
+                ((failed++))
+                failures+=("$name: expected error $expected_code but program was accepted")
+            else
+                if grep -q "$expected_code" "$stderr_out"; then
+                    printf "${GREEN}  PASS${NC}  %s\n" "$name"
+                    ((passed++))
+                else
+                    local actual_code
+                    actual_code=$(grep -oE 'ERROR_[A-Z_]+' "$stderr_out" | head -1)
+                    printf "${RED}  FAIL${NC}  %s  (expected %s, got %s)\n" "$name" "$expected_code" "${actual_code:-<no error code>}"
+                    ((failed++))
+                    failures+=("$name: expected $expected_code, got ${actual_code:-<no error code>}")
+                fi
+            fi
+            rm -f "$stderr_out"
+        done
+    done
+}
+
+echo ""
+echo "${BOLD}=== Mandatory tests ===${NC}"
+echo ""
+echo "${BOLD}--- Well-typed ---${NC}"
+run_well_typed "$TESTS_DIR/$STAGE/well-typed" "well-typed"
+
+echo ""
+echo "${BOLD}--- Ill-typed ---${NC}"
+run_ill_typed "$TESTS_DIR/$STAGE/ill-typed" "ill-typed"
+
+EXTRA_DIR="$TESTS_DIR/$STAGE/extra"
+if [[ -d "$EXTRA_DIR" ]]; then
+    echo ""
+    echo "${BOLD}=== Extra extension tests ===${NC}"
+    for ext_dir in "$EXTRA_DIR"/*/; do
+        [[ -d "$ext_dir" ]] || continue
+        ext_name=$(basename "$ext_dir")
+        if [[ "$ext_name" =~ ^($SKIP_EXTENSIONS)$ ]]; then
+            echo ""
+            echo "${YELLOW}  SKIP${NC}  #${ext_name} (disabled)"
+            ((skipped++))
+            continue
+        fi
+        echo ""
+        echo "${BOLD}--- #${ext_name} ---${NC}"
+        run_well_typed "$ext_dir/well-typed" "extra/${ext_name}/well-typed"
+        run_ill_typed "$ext_dir/ill-typed" "extra/${ext_name}/ill-typed"
+    done
+fi
+
+echo ""
+echo "${BOLD}==============================${NC}"
+total=$((passed + failed))
+echo -e "  ${GREEN}Passed: ${passed}${NC}  ${RED}Failed: ${failed}${NC}  Total: ${total}"
+
+if [[ ${#failures[@]} -gt 0 ]]; then
+    echo ""
+    echo "${BOLD}Failed tests:${NC}"
+    for f in "${failures[@]}"; do
+        echo "  - $f"
+    done
+fi
+
+echo ""
+if [[ $failed -eq 0 ]]; then
+    echo -e "${GREEN}${BOLD}All tests passed!${NC}"
+    exit 0
+else
+    echo -e "${RED}${BOLD}Some tests failed.${NC}"
+    exit 1
+fi

@@ -1,0 +1,9 @@
+language core;
+
+fn main(n : Nat) -> Nat {
+  return match <| b |> as <| b, c : Nat |> {
+    <| c |> => a
+  | <| b |> => n
+  }
+
+}

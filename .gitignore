@@ -1,0 +1,24 @@
+# Build
+build/
+
+# IDE
+.vscode/
+.cache/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ANTLR generated (grammar artifacts)
+grammar/*.tokens
+grammar/*.interp
+
+# External dependencies
+external/
+
+# Test suite (cloned automatically by run_tests.sh)
+tests/stella_test_suite/
