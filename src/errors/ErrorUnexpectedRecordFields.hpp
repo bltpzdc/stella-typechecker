@@ -15,6 +15,12 @@ public:
             fieldName.data() + "\nfor an expected record of type\n  " + expected->toString() +
             "\nin the record\n  " + ctx->getText()}
     {}
+
+    ErrorUnexpectedRecordFields(std::string_view fieldName, type::Record const* expected, stellaParser::ExprContext* ctx)
+        : CommonError{ERROR_UNEXPECTED_RECORD_FIELDS, std::string{"unexpected fields\n  "} +
+            fieldName.data() + "\nfor an expected record of type\n  " + expected->toString() +
+            "\nin the expression\n  " + ctx->getText()}
+    {}
 };
 
 }

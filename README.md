@@ -100,3 +100,8 @@ cmake --build build --target stella_typechecker
 - `ERROR_MISSING_DATA_FOR_LABEL` (`#nullary-variant-labels`)
 - `ERROR_UNEXPECTED_NON_NULLARY_VARIANT_PATTERN` (`#nullary-variant-labels`)
 - `ERROR_UNEXPECTED_NULLARY_VARIANT_PATTERN` (`#nullary-variant-labels`)
+
+
+### Для этапа 2
+
+Поддержано все, включая дополнительные расширения. Неподдержанные расширения из п.1 не добавлялись.

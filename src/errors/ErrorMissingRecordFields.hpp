@@ -16,6 +16,12 @@ public:
             fieldName.data() + "\nfor an expected record type\n  " + expected->toString() +
             "\nin the record\n  " + ctx->getText()}
     {}
+
+    ErrorMissingRecordFields(std::string_view fieldName, type::Record const* expected, stellaParser::ExprContext* ctx)
+        : CommonError{ERROR_MISSING_RECORD_FIELDS, std::string{"missing fields\n  "} +
+            fieldName.data() + "\nfor an expected record type\n  " + expected->toString() +
+            "\nin the expression\n  " + ctx->getText()}
+    {}
 };
 
 }

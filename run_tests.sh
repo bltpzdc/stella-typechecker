@@ -4,12 +4,24 @@ set -uo pipefail
 TESTS_REPO="https://github.com/ThatDraenGuy/stella_test_suite.git"
 TESTS_DIR="tests/stella_test_suite"
 STAGE="stage1"
+REFRESH_TESTS=0
 
 SKIP_EXTENSIONS="structural-patterns|letrec-bindings"
 should_skip_file() {
     grep -q '#letrec-bindings' "$1" && return 0
     grep -q '#structural-patterns' "$1" && grep -q '#let-patterns' "$1" && return 0
     return 1
+}
+
+usage() {
+    cat <<EOF
+Usage: $0 [path/to/stella_typechecker | --docker] [--stage stage1|stage2] [--refresh-tests]
+
+Examples:
+  $0
+  $0 ./build/stella_typechecker --stage stage2
+  $0 --docker --stage stage2 --refresh-tests
+EOF
 }
 
 if [[ -t 1 ]]; then
@@ -27,21 +39,59 @@ failed=0
 skipped=0
 failures=()
 
-if [[ "${1:-}" == "--docker" ]]; then
-    TYPECHECKER="docker run -i stella-typechecker"
-elif [[ -n "${1:-}" ]]; then
-    TYPECHECKER="$1"
-elif [[ -x "build/stella_typechecker" ]]; then
-    TYPECHECKER="./build/stella_typechecker"
-else
-    echo "Usage: $0 [path/to/stella_typechecker | --docker]"
-    echo "  Or build the project first so ./build/stella_typechecker exists."
-    exit 1
+TYPECHECKER=""
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --docker)
+            TYPECHECKER="docker run -i stella-typechecker"
+            shift
+            ;;
+        --stage)
+            [[ $# -ge 2 ]] || { echo "Missing value after --stage"; usage; exit 1; }
+            STAGE="$2"
+            shift 2
+            ;;
+        --refresh-tests)
+            REFRESH_TESTS=1
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$TYPECHECKER" ]]; then
+    if [[ ${#POSITIONAL[@]} -gt 0 ]]; then
+        TYPECHECKER="${POSITIONAL[0]}"
+    elif [[ -x "build/stella_typechecker" ]]; then
+        TYPECHECKER="./build/stella_typechecker"
+    else
+        usage
+        echo "Or build the project first so ./build/stella_typechecker exists."
+        exit 1
+    fi
 fi
 
 if [[ ! -d "$TESTS_DIR" ]]; then
     echo "Cloning test suite..."
     git clone --depth 1 "$TESTS_REPO" "$TESTS_DIR"
+elif [[ "$REFRESH_TESTS" -eq 1 ]]; then
+    echo "Refreshing test suite..."
+    git -C "$TESTS_DIR" fetch --depth 1 origin
+    git -C "$TESTS_DIR" reset --hard origin/HEAD > /dev/null
+fi
+
+if [[ ! -d "$TESTS_DIR/$STAGE" ]]; then
+    echo "Requested stage '$STAGE' was not found in $TESTS_DIR."
+    echo "If the remote test suite was updated, rerun with --refresh-tests."
+    exit 1
 fi
 
 run_well_typed() {
